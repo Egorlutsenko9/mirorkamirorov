@@ -64,24 +64,27 @@ async def run() -> None:
     try:
         done, pending = await asyncio.wait(
             {polling_task, telethon_task},
-            return_when=asyncio.FIRST_EXCEPTION,
+            return_when=asyncio.FIRST_COMPLETED,
         )
 
         for task in done:
+            if task.cancelled():
+                continue
             exc = task.exception()
             if exc:
                 raise exc
 
+        await tg_client.disconnect()
         for task in pending:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
     finally:
+        await tg_client.disconnect()
         for task in (polling_task, telethon_task):
             if not task.done():
                 task.cancel()
         await asyncio.gather(polling_task, telethon_task, return_exceptions=True)
 
-        await tg_client.disconnect()
         await bot.session.close()
         await db.close()
         logger.info("Сервис остановлен")
