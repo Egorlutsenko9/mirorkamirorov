@@ -11,6 +11,7 @@ from .config import load_settings
 from .db import Database
 from .logging_setup import setup_logging
 from .services.bot_mirror_sender import BotMirrorSender
+from .services.name_resolver import TelegramNameResolver
 from .services.route_service import RouteService
 from .services.telethon_forwarder import TelethonForwarder
 from .telethon_auth import ensure_authorized
@@ -31,17 +32,18 @@ async def run() -> None:
     bot = Bot(token=settings.bot_token)
     dp = Dispatcher()
 
+    tg_client = TelegramClient(settings.tg_session, settings.tg_api_id, settings.tg_api_hash)
+    await ensure_authorized(tg_client, settings.tg_phone)
+
     ui = AdminRouterUI(
         bot=bot,
         admin_user_id=settings.admin_user_id,
         fixed_dest_chat_id=settings.dest_chat_id,
         db=db,
         route_service=route_service,
+        name_resolver=TelegramNameResolver(tg_client),
     )
     dp.include_router(ui.router)
-
-    tg_client = TelegramClient(settings.tg_session, settings.tg_api_id, settings.tg_api_hash)
-    await ensure_authorized(tg_client, settings.tg_phone)
 
     bot_sender = BotMirrorSender(bot=bot, client=tg_client)
     forwarder = TelethonForwarder(tg_client, route_service, bot_sender)

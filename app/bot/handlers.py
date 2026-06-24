@@ -9,6 +9,7 @@ from aiogram.filters import CommandStart
 from aiogram.types import CallbackQuery, Message
 
 from ..db import Database
+from ..services.name_resolver import TelegramNameResolver
 from ..services.route_service import RouteService
 from .keyboards import build_main_keyboard
 
@@ -35,12 +36,14 @@ class AdminRouterUI:
         fixed_dest_chat_id: int,
         db: Database,
         route_service: RouteService,
+        name_resolver: TelegramNameResolver,
     ) -> None:
         self._bot = bot
         self._admin_user_id = admin_user_id
         self._fixed_dest_chat_id = fixed_dest_chat_id
         self._db = db
         self._route_service = route_service
+        self._name_resolver = name_resolver
         self._sessions: dict[int, UiSession] = {}
         self._logger = logging.getLogger("ui")
 
@@ -56,7 +59,7 @@ class AdminRouterUI:
         if not self._is_admin(message.from_user.id if message.from_user else None):
             return
 
-        text = self._build_main_text(notice="Панель управления обновлена")
+        text = await self._build_main_text(notice="Панель управления обновлена")
         keyboard = build_main_keyboard(self._route_service.list_routes())
         sent = await message.answer(text, reply_markup=keyboard)
 
@@ -85,6 +88,7 @@ class AdminRouterUI:
             if data == "menu:add":
                 await self._start_add_flow(chat_id)
             elif data == "menu:refresh":
+                self._name_resolver.clear_cache()
                 await self._render_main(chat_id, notice="Список маршрутов обновлен")
             elif data.startswith("route:toggle:"):
                 route_id = int(data.split(":")[-1])
@@ -203,7 +207,7 @@ class AdminRouterUI:
         if main_message_id is None:
             return
 
-        text = self._build_main_text(notice=notice)
+        text = await self._build_main_text(notice=notice)
         keyboard = build_main_keyboard(self._route_service.list_routes())
 
         try:
@@ -217,13 +221,14 @@ class AdminRouterUI:
             if "message is not modified" not in str(exc).lower():
                 raise
 
-    def _build_main_text(self, notice: str | None = None) -> str:
+    async def _build_main_text(self, notice: str | None = None) -> str:
         routes = self._route_service.list_routes()
+        dest_chat_name = await self._name_resolver.chat_name(self._fixed_dest_chat_id)
 
         lines = [
             "Управление пересылкой сообщений",
             "",
-            f"Чат назначения (фикс): {self._fixed_dest_chat_id}",
+            f"Чат назначения (фикс): {dest_chat_name}",
             "",
             "Маршруты:",
         ]
@@ -233,12 +238,21 @@ class AdminRouterUI:
         else:
             for route in routes:
                 enabled = "✅" if route.enabled else "❌"
-                src_topic = route.source_thread_id if route.source_thread_id is not None else "все"
-                dst_topic = route.dest_thread_id if route.dest_thread_id is not None else "без ветки"
-                lines.append(
-                    f"- #{route.id} {enabled} {route.source_chat_id} (ветка: {src_topic}) -> "
-                    f"{route.dest_chat_id} (ветка: {dst_topic})"
+                source_name = await self._name_resolver.chat_name(route.source_chat_id)
+                dest_name = await self._name_resolver.chat_name(route.dest_chat_id)
+                source_topic = await self._name_resolver.topic_name(
+                    route.source_chat_id,
+                    route.source_thread_id,
+                    none_label="все ветки",
                 )
+                dest_topic = await self._name_resolver.topic_name(
+                    route.dest_chat_id,
+                    route.dest_thread_id,
+                    none_label="без ветки",
+                )
+                lines.append(f"- #{route.id} {enabled}")
+                lines.append(f"  из: {source_name} / {source_topic}")
+                lines.append(f"  в: {dest_name} / {dest_topic}")
 
         if notice:
             lines.extend(["", f"Статус: {notice}"])
