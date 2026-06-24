@@ -84,6 +84,7 @@ class AdminRouterUI:
             return
 
         data = callback.data or ""
+        await callback.answer()
         try:
             if data == "menu:add":
                 await self._start_add_flow(chat_id)
@@ -102,8 +103,6 @@ class AdminRouterUI:
         except Exception as exc:  # noqa: BLE001
             self._logger.error("Ошибка обработки callback: %s", exc)
             await self._render_main(chat_id, notice=f"Ошибка: {exc}")
-
-        await callback.answer()
 
     async def on_user_input(self, message: Message) -> None:
         if not self._is_admin(message.from_user.id if message.from_user else None):

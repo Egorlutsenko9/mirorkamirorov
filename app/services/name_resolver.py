@@ -22,6 +22,7 @@ class TelegramNameResolver:
         self._logger = logging.getLogger("name_resolver")
         self._chat_cache: dict[int, str] = {}
         self._topic_cache: dict[tuple[int, int], str] = {}
+        self._topic_list_cache: dict[int, dict[int, str]] = {}
 
     async def chat_name(self, chat_id: int) -> str:
         cached = self._chat_cache.get(chat_id)
@@ -62,7 +63,7 @@ class TelegramNameResolver:
         try:
             entity = await self._client.get_entity(chat_id)
             input_channel = utils.get_input_channel(entity)
-            title = await self._resolve_topic_title(input_channel, topic_id)
+            title = await self._resolve_topic_title(chat_id, input_channel, topic_id)
             name = f"{title} ({topic_id})" if title else f"topic {topic_id}"
         except Exception as exc:  # noqa: BLE001
             self._logger.warning(
@@ -76,7 +77,12 @@ class TelegramNameResolver:
         self._topic_cache[key] = name
         return name
 
-    async def _resolve_topic_title(self, input_channel: object, topic_id: int) -> str | None:
+    async def _resolve_topic_title(
+        self,
+        chat_id: int,
+        input_channel: object,
+        topic_id: int,
+    ) -> str | None:
         if GetForumTopicsByIDRequest is not None:
             result = await self._client(
                 GetForumTopicsByIDRequest(channel=input_channel, topics=[topic_id])
@@ -87,10 +93,20 @@ class TelegramNameResolver:
         if GetForumTopicsRequest is None:
             raise RuntimeError("Telethon does not support forum topic requests")
 
+        cached_topics = self._topic_list_cache.get(chat_id)
+        if cached_topics is not None:
+            return cached_topics.get(topic_id)
+
         result = await self._client(
             GetForumTopicsRequest(**self._forum_topics_kwargs(input_channel))
         )
         topics = getattr(result, "topics", None) or []
+        self._topic_list_cache[chat_id] = {
+            int(getattr(topic, "id")): str(getattr(topic, "title"))
+            for topic in topics
+            if getattr(topic, "id", None) is not None and getattr(topic, "title", None)
+        }
+
         for topic in topics:
             if getattr(topic, "id", None) == topic_id:
                 return getattr(topic, "title", None)
@@ -114,3 +130,4 @@ class TelegramNameResolver:
     def clear_cache(self) -> None:
         self._chat_cache.clear()
         self._topic_cache.clear()
+        self._topic_list_cache.clear()
