@@ -90,28 +90,40 @@ class TelegramNameResolver:
             topics = getattr(result, "topics", None) or []
             return getattr(topics[0], "title", None) if topics else None
 
-        if GetForumTopicsRequest is None:
-            raise RuntimeError("Telethon does not support forum topic requests")
+        if GetForumTopicsRequest is not None:
+            cached_topics = self._topic_list_cache.get(chat_id)
+            if cached_topics is not None:
+                return cached_topics.get(topic_id)
 
-        cached_topics = self._topic_list_cache.get(chat_id)
-        if cached_topics is not None:
-            return cached_topics.get(topic_id)
+            result = await self._client(
+                GetForumTopicsRequest(**self._forum_topics_kwargs(input_channel))
+            )
+            topics = getattr(result, "topics", None) or []
+            self._topic_list_cache[chat_id] = {
+                int(getattr(topic, "id")): str(getattr(topic, "title"))
+                for topic in topics
+                if getattr(topic, "id", None) is not None and getattr(topic, "title", None)
+            }
 
-        result = await self._client(
-            GetForumTopicsRequest(**self._forum_topics_kwargs(input_channel))
-        )
-        topics = getattr(result, "topics", None) or []
-        self._topic_list_cache[chat_id] = {
-            int(getattr(topic, "id")): str(getattr(topic, "title"))
-            for topic in topics
-            if getattr(topic, "id", None) is not None and getattr(topic, "title", None)
-        }
+            for topic in topics:
+                if getattr(topic, "id", None) == topic_id:
+                    return getattr(topic, "title", None)
 
-        for topic in topics:
-            if getattr(topic, "id", None) == topic_id:
-                return getattr(topic, "title", None)
+        return await self._resolve_topic_title_from_root_message(chat_id, topic_id)
 
-        return None
+    async def _resolve_topic_title_from_root_message(
+        self,
+        chat_id: int,
+        topic_id: int,
+    ) -> str | None:
+        message = await self._client.get_messages(chat_id, ids=topic_id)
+        action = getattr(message, "action", None)
+        title = getattr(action, "title", None)
+        if title:
+            return str(title)
+
+        text = (getattr(message, "raw_text", None) or "").strip()
+        return text or None
 
     @staticmethod
     def _forum_topics_kwargs(input_channel: object) -> dict[str, object]:

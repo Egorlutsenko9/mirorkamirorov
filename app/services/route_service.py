@@ -56,10 +56,14 @@ class RouteService:
     def list_routes(self) -> list[Route]:
         return list(self._routes)
 
-    def match(self, source_chat_id: int, source_thread_id: int | None) -> list[Route]:
+    def source_routes(self, source_chat_id: int) -> list[Route]:
         routes: list[Route] = []
         for candidate in self._source_id_candidates(source_chat_id):
             routes.extend(self._by_source.get(candidate, []))
+        return routes
+
+    def match(self, source_chat_id: int, source_thread_id: int | None) -> list[Route]:
+        routes = self.source_routes(source_chat_id)
         if not routes:
             return []
 

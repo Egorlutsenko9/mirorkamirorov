@@ -67,6 +67,20 @@ class TelethonForwarder:
                     topic_id = 1
 
             if not matched_routes:
+                source_routes = self._routes.source_routes(chat_id)
+                if source_routes:
+                    expected_topics = [
+                        route.source_thread_id if route.source_thread_id is not None else "все"
+                        for route in source_routes
+                    ]
+                    self._logger.info(
+                        "Сообщение из настроенного источника %s не подошло по ветке: получена=%s, ожидается=%s",
+                        chat_id,
+                        topic_id if topic_id is not None else "без темы",
+                        expected_topics,
+                    )
+                    return
+
                 self._logger.debug(
                     "Сообщение без подходящего маршрута: источник=%s тема=%s",
                     chat_id,
