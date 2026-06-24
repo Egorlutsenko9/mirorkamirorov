@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import logging
 
 from telethon import TelegramClient, utils
@@ -8,6 +9,11 @@ try:
     from telethon.tl.functions.channels import GetForumTopicsByIDRequest
 except ImportError:  # pragma: no cover - depends on Telethon version
     GetForumTopicsByIDRequest = None
+
+try:
+    from telethon.tl.functions.channels import GetForumTopicsRequest
+except ImportError:  # pragma: no cover - depends on Telethon version
+    GetForumTopicsRequest = None
 
 
 class TelegramNameResolver:
@@ -54,16 +60,9 @@ class TelegramNameResolver:
             return cached
 
         try:
-            if GetForumTopicsByIDRequest is None:
-                raise RuntimeError("Telethon does not support GetForumTopicsByIDRequest")
-
             entity = await self._client.get_entity(chat_id)
             input_channel = utils.get_input_channel(entity)
-            result = await self._client(
-                GetForumTopicsByIDRequest(channel=input_channel, topics=[topic_id])
-            )
-            topics = getattr(result, "topics", None) or []
-            title = getattr(topics[0], "title", None) if topics else None
+            title = await self._resolve_topic_title(input_channel, topic_id)
             name = f"{title} ({topic_id})" if title else f"topic {topic_id}"
         except Exception as exc:  # noqa: BLE001
             self._logger.warning(
@@ -76,6 +75,41 @@ class TelegramNameResolver:
 
         self._topic_cache[key] = name
         return name
+
+    async def _resolve_topic_title(self, input_channel: object, topic_id: int) -> str | None:
+        if GetForumTopicsByIDRequest is not None:
+            result = await self._client(
+                GetForumTopicsByIDRequest(channel=input_channel, topics=[topic_id])
+            )
+            topics = getattr(result, "topics", None) or []
+            return getattr(topics[0], "title", None) if topics else None
+
+        if GetForumTopicsRequest is None:
+            raise RuntimeError("Telethon does not support forum topic requests")
+
+        result = await self._client(
+            GetForumTopicsRequest(**self._forum_topics_kwargs(input_channel))
+        )
+        topics = getattr(result, "topics", None) or []
+        for topic in topics:
+            if getattr(topic, "id", None) == topic_id:
+                return getattr(topic, "title", None)
+
+        return None
+
+    @staticmethod
+    def _forum_topics_kwargs(input_channel: object) -> dict[str, object]:
+        signature = inspect.signature(GetForumTopicsRequest.__init__)
+        supported = set(signature.parameters)
+        values: dict[str, object] = {
+            "channel": input_channel,
+            "q": "",
+            "offset_date": None,
+            "offset_id": 0,
+            "offset_topic": 0,
+            "limit": 100,
+        }
+        return {key: value for key, value in values.items() if key in supported}
 
     def clear_cache(self) -> None:
         self._chat_cache.clear()
