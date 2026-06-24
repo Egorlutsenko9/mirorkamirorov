@@ -126,16 +126,16 @@ class AdminRouterUI:
             pending.step = 2
             pending.prompt_message_id = await self._ask_input(
                 message.chat.id,
-                "Введите ID ветки источника. Отправьте 0, если фильтр по ветке не нужен.",
+                "Введите ID ветки источника (только номер ветки). Отправьте 0, если фильтр по ветке не нужен.",
             )
             return
 
         if pending.step == 2:
-            is_valid, source_thread_id = self._parse_optional_int(raw_text)
+            is_valid, source_thread_id = self._parse_optional_topic_id(raw_text)
             if not is_valid:
                 pending.prompt_message_id = await self._ask_input(
                     message.chat.id,
-                    "ID ветки должен быть числом или 0. Попробуйте еще раз.",
+                    "ID ветки должен быть положительным числом или 0. Это не ID чата -100...",
                 )
                 return
 
@@ -143,16 +143,16 @@ class AdminRouterUI:
             pending.step = 3
             pending.prompt_message_id = await self._ask_input(
                 message.chat.id,
-                "Введите ID ветки назначения. Отправьте 0, если пересылка без ветки.",
+                "Введите ID ветки назначения (только номер ветки). Отправьте 0, если пересылка без ветки.",
             )
             return
 
         if pending.step == 3:
-            is_valid, dest_thread_id = self._parse_optional_int(raw_text)
+            is_valid, dest_thread_id = self._parse_optional_topic_id(raw_text)
             if not is_valid:
                 pending.prompt_message_id = await self._ask_input(
                     message.chat.id,
-                    "ID ветки назначения должен быть числом или 0. Попробуйте еще раз.",
+                    "ID ветки назначения должен быть положительным числом или 0. Это не ID чата -100...",
                 )
                 return
 
@@ -280,3 +280,12 @@ class AdminRouterUI:
             return True, int(stripped)
         except ValueError:
             return False, None
+
+    @classmethod
+    def _parse_optional_topic_id(cls, value: str) -> tuple[bool, int | None]:
+        is_valid, parsed = cls._parse_optional_int(value)
+        if not is_valid or parsed is None:
+            return is_valid, parsed
+        if parsed <= 0:
+            return False, None
+        return True, parsed

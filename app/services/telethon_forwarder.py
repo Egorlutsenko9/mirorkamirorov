@@ -28,10 +28,11 @@ def _extract_topic_id(message: Message) -> int | None:
     if top_id:
         return int(top_id)
 
-    if getattr(reply_to, "forum_topic", False):
-        topic_id = getattr(reply_to, "reply_to_msg_id", None)
-        if topic_id:
-            return int(topic_id)
+    # In forum chats Telethon may put the topic/root message id here,
+    # including messages that are not explicit replies inside the topic.
+    topic_id = getattr(reply_to, "reply_to_msg_id", None)
+    if topic_id:
+        return int(topic_id)
 
     return None
 
