@@ -21,6 +21,10 @@ def build_main_keyboard(routes: list[Route]) -> InlineKeyboardMarkup:
                     callback_data=f"route:toggle:{route.id}",
                 ),
                 InlineKeyboardButton(
+                    text=f"ℹ️ #{route.id}",
+                    callback_data=f"route:details:{route.id}",
+                ),
+                InlineKeyboardButton(
                     text=f"🗑 Удалить #{route.id}",
                     callback_data=f"route:delete:{route.id}",
                 ),
@@ -28,3 +32,12 @@ def build_main_keyboard(routes: list[Route]) -> InlineKeyboardMarkup:
         )
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def build_details_keyboard(route_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu:refresh")],
+            [InlineKeyboardButton(text=f"🗑 Удалить #{route_id}", callback_data=f"route:delete:{route_id}")],
+        ]
+    )

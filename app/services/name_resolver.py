@@ -37,7 +37,7 @@ class TelegramNameResolver:
                 or getattr(entity, "first_name", None)
                 or str(chat_id)
             )
-            name = f"{title} ({chat_id})"
+            name = str(title)
         except Exception as exc:  # noqa: BLE001
             self._logger.warning("Could not resolve chat name %s: %s", chat_id, exc)
             name = str(chat_id)

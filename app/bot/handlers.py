@@ -9,9 +9,10 @@ from aiogram.filters import CommandStart
 from aiogram.types import CallbackQuery, Message
 
 from ..db import Database
+from ..models import Route
 from ..services.name_resolver import TelegramNameResolver
 from ..services.route_service import RouteService
-from .keyboards import build_main_keyboard
+from .keyboards import build_details_keyboard, build_main_keyboard
 
 
 @dataclass(slots=True)
@@ -96,6 +97,9 @@ class AdminRouterUI:
                 enabled = await self._route_service.toggle_route(route_id)
                 state = "включен" if enabled else "выключен"
                 await self._render_main(chat_id, notice=f"Маршрут #{route_id} {state}")
+            elif data.startswith("route:details:"):
+                route_id = int(data.split(":")[-1])
+                await self._render_route_details(chat_id, route_id)
             elif data.startswith("route:delete:"):
                 route_id = int(data.split(":")[-1])
                 await self._route_service.delete_route(route_id)
@@ -220,6 +224,30 @@ class AdminRouterUI:
             if "message is not modified" not in str(exc).lower():
                 raise
 
+    async def _render_route_details(self, chat_id: int, route_id: int) -> None:
+        session = self._sessions.setdefault(chat_id, UiSession())
+        main_message_id = session.main_message_id or await self._db.get_main_message_id(chat_id)
+        session.main_message_id = main_message_id
+        if main_message_id is None:
+            return
+
+        route = self._find_route(route_id)
+        if route is None:
+            await self._render_main(chat_id, notice=f"Маршрут #{route_id} не найден")
+            return
+
+        text = await self._build_route_details_text(route)
+        try:
+            await self._bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=main_message_id,
+                text=text,
+                reply_markup=build_details_keyboard(route_id),
+            )
+        except TelegramBadRequest as exc:
+            if "message is not modified" not in str(exc).lower():
+                raise
+
     async def _build_main_text(self, notice: str | None = None) -> str:
         routes = self._route_service.list_routes()
         dest_chat_name = await self._name_resolver.chat_name(self._fixed_dest_chat_id)
@@ -257,6 +285,48 @@ class AdminRouterUI:
             lines.extend(["", f"Статус: {notice}"])
 
         return "\n".join(lines)
+
+    async def _build_route_details_text(self, route: Route) -> str:
+        enabled = "включен" if route.enabled else "выключен"
+        source_name = await self._name_resolver.chat_name(route.source_chat_id)
+        dest_name = await self._name_resolver.chat_name(route.dest_chat_id)
+        source_topic = await self._name_resolver.topic_name(
+            route.source_chat_id,
+            route.source_thread_id,
+            none_label="все ветки",
+        )
+        dest_topic = await self._name_resolver.topic_name(
+            route.dest_chat_id,
+            route.dest_thread_id,
+            none_label="без ветки",
+        )
+
+        source_thread_id = route.source_thread_id if route.source_thread_id is not None else "нет"
+        dest_thread_id = route.dest_thread_id if route.dest_thread_id is not None else "нет"
+
+        return "\n".join(
+            [
+                f"Маршрут #{route.id}",
+                "",
+                f"Статус: {enabled}",
+                "",
+                "Из:",
+                f"{source_name} / {source_topic}",
+                f"chat_id: {route.source_chat_id}",
+                f"thread_id: {source_thread_id}",
+                "",
+                "В:",
+                f"{dest_name} / {dest_topic}",
+                f"chat_id: {route.dest_chat_id}",
+                f"thread_id: {dest_thread_id}",
+            ]
+        )
+
+    def _find_route(self, route_id: int) -> Route | None:
+        for route in self._route_service.list_routes():
+            if route.id == route_id:
+                return route
+        return None
 
     async def _is_current_main_message(self, chat_id: int, message_id: int) -> bool:
         session = self._sessions.setdefault(chat_id, UiSession())
